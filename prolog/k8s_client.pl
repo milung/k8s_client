@@ -20,13 +20,14 @@
 %  ...
 %
 
+%:- set_prolog_flag(generate_debug_info, false).
 
 :- use_module(library(yaml)).
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_client)).
 
-% :- use_module(source(module)).
+:- use_module(source(module)).
 
 :- dynamic
     cluster_resources/2,
@@ -509,6 +510,8 @@ prolog:message(kubernetes(unsupported_config, cluster)) -->
     ['Kubernetes: Configuration of the user '].
  prolog:message(kubernetes(watcher_exited, Resource)) -->
     ['Kubernetes: Watching of the resources type `~p` exited '- Resource].
+ prolog:message(kubernetes(watcher_update_failure, Goal, Id)) -->
+    ['Kubernetes: Calling the goal ~p from resource controller for resource ~p modification failed'- [Goal, Id]].
 
 resource_uri(ApiGroup, Version, ResourceTypeName, Uri, Options) :-
     option(k8s_namespace(all), Options, all),
@@ -563,6 +566,8 @@ watch_modification_call(_, Id, _, Version, Version, KnownResources, KnownResourc
     ->  call(Goal, deleted, Change.object)
     ;   Rest = R
     ).
+ watch_modification_call(Goal, Id, _, State, State) :- 
+    print_message(error, kubernetes(watcher_update_failure,Goal, Id)).
 
 
 watch_resources_loop(_, _, _, ResourceTypeName, state(Version, _),  Options) :-  % special handling to exit the async loop
@@ -609,25 +614,16 @@ watch_stream(Goal, Stream, Id, StateIn, StateOut) :-
     !,
     watch_stream(Goal, Stream, Id, State0, StateOut). 
 
+
 watcher_exit(Id) :-
  watcher_exit(Id, _).
 
-watcher_exit(Id, join) :-
-    !,
-    thread_join(Id, _),
-    ignore(retractall(watcher_status(Id,_))).
-
-watcher_exit(Id, stop) :-
-    !,
-    thread_join(Id, _),
-    watcher_exit(Id, _).
-
 watcher_exit(Id, Status) :-
-    (   retract(watcher_status(Id, running(Stream)))
-    ->  assertz(watcher_status(Id, exit_request)),
-        retractall(watcher_status(Id, running(_))),
+    (   retract(k8s_client:watcher_status(Id, running(Stream)))
+    ->  assertz(k8s_client:watcher_status(Id, exit_request)),
+        retractall(k8s_client:watcher_status(Id, running(_))),
         close(Stream)
-    ;   assertz(watcher_status(Id, exit_request))
+    ;   assertz(k8s_client:watcher_status(Id, exit_request))
     ),
     thread_join(Id, Status),
-    ignore(retractall(watcher_status(Id,_))).
+    ignore(retractall(k8s_client:watcher_status(Id,_))).
