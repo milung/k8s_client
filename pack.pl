@@ -1,5 +1,5 @@
 name(k8s_client).
-version('1.0.1').
+version('1.0.2').
 title('kubernetes API client with watcher functionality').
 author('Milan Unger', 'http://milung.eu/').
 packager('Milan Unger', 'http://milung.eu/').

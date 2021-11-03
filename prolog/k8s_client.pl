@@ -20,14 +20,13 @@
 %  ...
 %
 
-%:- set_prolog_flag(generate_debug_info, false).
+:- set_prolog_flag(generate_debug_info, false).
 
 :- use_module(library(yaml)).
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_client)).
 
-:- use_module(source(module)).
 
 :- dynamic
     cluster_resources/2,
