@@ -517,7 +517,7 @@ prolog:message(kubernetes(unsupported_config, cluster)) -->
     ['Kubernetes: Configuration taken using the environment variable KUBECONFIG'].
  prolog:message(kubernetes(config_loaded, user_config)) -->
     ['Kubernetes: Configuration taken the users home directory'].
- prolog:message(kubernetes(config_loaded, kubeconfig)) -->
+ prolog:message(kubernetes(config_loaded, pod)) -->
     ['Kubernetes: Configuration taken from the kubernetes pod service account'].
  prolog:message(kubernetes(watch_modification, Change)) -->
     ['Kubernetes: Modification of resources detected: ~p' - [Change] ].
@@ -614,12 +614,13 @@ watch_stream(_, _, Id, State, State) :-
 watch_stream(Goal, Stream, Id, StateIn, StateOut) :-
     catch(
         (   peek_string(Stream, 4, _),
-            json_read_dict(Stream, Change, [end_of_file(end_of_file)])
+            json_read_dict(Stream, Change, [end_of_file(end_of_file)]),
+            print_message(informational, kubernetes(watch_modification, Change))
         ),
         Error,
         Change = Error
     ),
-    print_message(informational, kubernetes(watch_modification, Change)),
+    
     watch_modification_call(Goal, Id, Change, StateIn, State0),
     !,
     watch_stream(Goal, Stream, Id, State0, StateOut). 
