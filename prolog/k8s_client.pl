@@ -306,7 +306,7 @@ config_ca_options(Cluster, OptionsIn, [ cacerts([certificate(CaCert)])| OptionsI
     base64_certificate( Cluster.get('certificate-authority-data'), CaCert),
     !.
  config_ca_options(Cluster, OptionsIn, [ cacerts([file(CaCert)])| OptionsIn ]) :-
-    base64_certificate( Cluster.get('certificate-authority'), CaCert),
+    Cluster.get('certificate-authority') = CaCert,
     !.
  config_ca_options(_, _, _) :-
     print_message(error, kubernetes(unsupported_config, cluster)),
@@ -364,9 +364,7 @@ config_get_user(Config, UserName, User) :-
     member(UserDict, Config.users),
     atom_string(UserName, UserDict.name),
     User = UserDict.user.
-
-
-    
+   
 context_options( OptionsIn, OptionsOut) :-
     (   option(k8s_config(Config), OptionsIn)
     ->  OptionsIn = Options1
@@ -448,6 +446,7 @@ load_config(ConfigDict) :- % KUBECONFIG variant
     ;   atomic_list_concat(Files, ':', Path)
     ),
     foldl(load_and_merge_config_file, Files, _{}, ConfigDict),
+    print_message(informational, kubernetes(config_loaded, kubeconfig)),
     !.
  load_config(ConfigDict) :- % ~/.kube/config variant
     (   getenv('USERPROFILE', HomePath)
@@ -457,6 +456,8 @@ load_config(ConfigDict) :- % KUBECONFIG variant
     directory_file_path(HomePathPx, '.kube/config', ConfigPath),
     exists_file(ConfigPath),    
     yaml_read(ConfigPath, ConfigDict),
+    print_message(informational, kubernetes(config_loaded, user_config)),
+
     !.
 
  load_config(ConfigDict) :- % access api from pod
@@ -496,7 +497,8 @@ load_config(ConfigDict) :- % KUBECONFIG variant
                 }
             ], 
         'current-context': "from-pod"
-    },
+    },    
+    print_message(informational, kubernetes(config_loaded, pod)),
     !.
     
 path_to_posix(Path, Posix) :-
@@ -511,6 +513,14 @@ prolog:message(kubernetes(unsupported_config, cluster)) -->
     ['Kubernetes: Watching of the resources type `~p` exited '- Resource].
  prolog:message(kubernetes(watcher_update_failure, Goal, Id)) -->
     ['Kubernetes: Calling the goal ~p from resource controller for resource ~p modification failed'- [Goal, Id]].
+ prolog:message(kubernetes(config_loaded, kubeconfig)) -->
+    ['Kubernetes: Configuration taken using the environment variable KUBECONFIG'].
+ prolog:message(kubernetes(config_loaded, user_config)) -->
+    ['Kubernetes: Configuration taken the users home directory'].
+ prolog:message(kubernetes(config_loaded, kubeconfig)) -->
+    ['Kubernetes: Configuration taken from the kubernetes pod service account'].
+ prolog:message(kubernetes(watch_modification, Change)) -->
+    ['Kubernetes: Modification of resources detected: ~p' - [Change] ].
 
 resource_uri(ApiGroup, Version, ResourceTypeName, Uri, Options) :-
     option(k8s_namespace(all), Options, all),
@@ -572,7 +582,7 @@ watch_modification_call(_, Id, _, Version, Version, KnownResources, KnownResourc
 watch_resources_loop(_, _, _, ResourceTypeName, state(Version, _),  Options) :-  % special handling to exit the async loop
     (   option(watcher_id(Id), Options),
         watcher_status(Id, exit_request)
-    ->  (   print_message(information, kubernetes(watcher_exited, ResourceTypeName)),
+    ->  (   print_message(informational, kubernetes(watcher_exited, ResourceTypeName)),
             thread_exit(resourceVersion(Version))
         )
     ),
@@ -609,6 +619,7 @@ watch_stream(Goal, Stream, Id, StateIn, StateOut) :-
         Error,
         Change = Error
     ),
+    print_message(informational, kubernetes(watch_modification, Change)),
     watch_modification_call(Goal, Id, Change, StateIn, State0),
     !,
     watch_stream(Goal, Stream, Id, State0, StateOut). 
