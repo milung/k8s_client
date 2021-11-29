@@ -520,7 +520,7 @@ prolog:message(kubernetes(unsupported_config, cluster)) -->
  prolog:message(kubernetes(config_loaded, pod)) -->
     ['Kubernetes: Configuration taken from the kubernetes pod service account'].
  prolog:message(kubernetes(watch_modification, Change)) -->
-    { atom_json_dict(Json, Change, [as(string), width(0)]) },
+    { atom_json_dict(Json, Change, [as(atom), width(0)]) },
     ['Kubernetes: Modification of resources detected: ~p' - [Json] ].
 
 resource_uri(ApiGroup, Version, ResourceTypeName, Uri, Options) :-
