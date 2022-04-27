@@ -37,7 +37,7 @@
     k8s_watch_resources_async(2, +, +, +, -, +),
     watch_modification_call(2, +, +, +, -, +, -),
     watch_resources_loop(2, +, +, +, +, +),
-    watch_stream(2, +, +, +, +).
+    watch_stream(2, +, +, +, +, +).
 
 %%% PUBLIC PREDICATES %%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -159,6 +159,9 @@ k8s_update_resource(ApiGroup, Version, ResourceTypeName, Instance, InstanceOut, 
 %  `Options` are same as for the `k8s_get_resource/6` with extra option:
 %  * `k8s_resource_version(ResourceVersion:atom)` - if specified the initial list is retrieved for the changed since the specified resource version. 
 %    This option is used primary for internal purposes, and can be reset back to 0. 
+%  * `heartbeat_callback(:Callback)` - the `Callback` is invoked each time there is a change, error, or channel timeout occuring during watching the resource.
+%    This may be usefull for healthiness check of the controller. While the loop tends to be robust to typical issue of the errors during watching the callback
+%    may implement additional level of robustness. The failure of the callback is ignored.
 k8s_watch_resources(Callback, ApiGroup, Version, ResourceTypeName, Options) :-
     select_option(k8s_resource_version(ResourceVersion), Options, Options1, 0),
     watch_resources_loop(Callback, ApiGroup, Version, ResourceTypeName, state(ResourceVersion, []), Options1).
@@ -171,10 +174,9 @@ k8s_watch_resources_async(Callback, ApiGroup, Version, ResourceTypeName, k8s_cli
     thread_create(
         k8s_watch_resources(Callback, ApiGroup, Version, ResourceTypeName, [watcher_id(Id), timeout(1) | Options]),
         Id, 
-        [   at_exit(retractall(watcher_status(Id,_)))
+        [   at_exit(retractall(watcher_status(Id, _)))
         ]
-    ).
-
+    ). 
 
 %%% PRIVATE PREDICATES %%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -500,7 +502,9 @@ load_config(ConfigDict) :- % KUBECONFIG variant
     },    
     print_message(informational, kubernetes(config_loaded, pod)),
     !.
-    
+
+noop_healtz.
+
 path_to_posix(Path, Posix) :-
     atomic_list_concat(Segments, '\\', Path),
     atomic_list_concat(Segments, '/', Posix).
@@ -595,13 +599,18 @@ watch_resources_loop(_, _, _, ResourceTypeName, state(Version, _),  Options) :- 
     uri_components(Uri, UriComponents),
     http_open( Uri, Stream, Options2),
     (   option(watcher_id(Id), Options)
-    ->  retractall(watcher_status(Id, running(_))),
+    ->  retractall(watcher_status(Id, running(_))),        
         asserta(watcher_status(Id, running(Stream)))
     ;   Id = []
+    ),  
+    (   option(heartbeat_callback(HeartCallback), Options)
+    ->  true
+    ;   HeartCallback = noop_healtz
     ),
+      
     !,
     catch(
-        watch_stream(Callback, Stream, Id, State, State1),
+        watch_stream(Callback, HeartCallback, Stream, Id, State, State1),
         error(k8s_watcher_error(connection_broken), State1), 
         true
     ),
@@ -609,10 +618,11 @@ watch_resources_loop(_, _, _, ResourceTypeName, state(Version, _),  Options) :- 
     !, % cut here to avoid recursion stack on async loop
     watch_resources_loop(Callback, ApiGroup, Version, ResourceTypeName, State1, Options).
 
-watch_stream(_, _, Id, State, State) :-
+watch_stream(_, _, _, Id, State, State) :-
     watcher_status(Id, exit_request),
     !.
-watch_stream(Goal, Stream, Id, StateIn, StateOut) :-
+watch_stream(Goal, HeartCallback, Stream, Id, StateIn, StateOut) :-
+    ignore(HeartCallback),
     catch(
         (   peek_string(Stream, 4, _),
             json_read_dict(Stream, Change, [end_of_file(end_of_file)]),
@@ -621,10 +631,9 @@ watch_stream(Goal, Stream, Id, StateIn, StateOut) :-
         Error,
         Change = Error
     ),
-    
     watch_modification_call(Goal, Id, Change, StateIn, State0),
     !,
-    watch_stream(Goal, Stream, Id, State0, StateOut). 
+    watch_stream(Goal, HeartCallback, Stream, Id, State0, StateOut). 
 
 
 watcher_exit(Id) :-
