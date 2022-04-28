@@ -526,6 +526,8 @@ prolog:message(kubernetes(unsupported_config, cluster)) -->
  prolog:message(kubernetes(watch_modification, Change)) -->
     { atom_json_dict(Json, Change, [as(atom), width(0)]) },
     ['Kubernetes: Modification of resources detected: ~p' - [Json] ].
+prolog:message(kubernetes(watcher_heartbeat_callback_failure, HeartCallback, Id)) -->
+    ['Kubernetes: The heartbeat callback `~w` of the watcher thread `~w` failed' - [HeartCallback, Id] ].
 
 resource_uri(ApiGroup, Version, ResourceTypeName, Uri, Options) :-
     option(k8s_namespace(all), Options, all),
@@ -622,7 +624,10 @@ watch_stream(_, _, _, Id, State, State) :-
     watcher_status(Id, exit_request),
     !.
 watch_stream(Goal, HeartCallback, Stream, Id, StateIn, StateOut) :-
-    HeartCallback,
+    (   call(HeartCallback)
+    ->  true
+    ;   print_message(error, kubernetes(watcher_heartbeat_callback_failure, HeartCallback, Id))
+    ),
     catch(
         (   peek_string(Stream, 4, _),
             json_read_dict(Stream, Change, [end_of_file(end_of_file)]),
@@ -633,8 +638,8 @@ watch_stream(Goal, HeartCallback, Stream, Id, StateIn, StateOut) :-
     ),
     watch_modification_call(Goal, Id, Change, StateIn, State0),
     !,
-    watch_stream(Goal, HeartCallback, Stream, Id, State0, StateOut). 
-
+    watch_stream(Goal, HeartCallback, Stream, Id, State0, StateOut),
+    !.
 
 watcher_exit(Id) :-
  watcher_exit(Id, _).
