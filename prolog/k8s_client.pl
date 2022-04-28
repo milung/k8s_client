@@ -622,7 +622,7 @@ watch_stream(_, _, _, Id, State, State) :-
     watcher_status(Id, exit_request),
     !.
 watch_stream(Goal, HeartCallback, Stream, Id, StateIn, StateOut) :-
-    ignore(HeartCallback),
+    HeartCallback,
     catch(
         (   peek_string(Stream, 4, _),
             json_read_dict(Stream, Change, [end_of_file(end_of_file)]),
